@@ -52,7 +52,7 @@ add_action('acf/init', function () {
                 }
 
                 // Get header info from the found template file(s)
-                $file = "$dir/$slug.blade.php";
+                $file = "${dir}/${slug}.blade.php";
                 $file_path = file_exists($file) ? $file : '';
                 $file_headers = get_file_data($file_path, [
                     'title' => 'Title',
@@ -83,13 +83,14 @@ add_action('acf/init', function () {
                     $sage_error(__('This block needs a category: ' . $dir . '/' . $template->getFilename(), 'sage'), __('Block category missing', 'sage'));
                 }
 
-                // Checks if dist contains this asset, then enqueues the dist version.
-                if (!empty($file_headers['enqueue_style'])) {
-                    checkAssetPath($file_headers['enqueue_style']);
+                // Checks if it can find the bundle name to include with Bud.
+                // Checks if public contains this asset, then enqueues the public version. (Pre-Bud Sage)
+                if ($file_headers['enqueue_style']) {
+                    checkAssetPath($file_headers['enqueue_style'], $slug);
                 }
 
-                if (!empty($file_headers['enqueue_script'])) {
-                    checkAssetPath($file_headers['enqueue_script']);
+                if ($file_headers['enqueue_script']) {
+                    checkAssetPath($file_headers['enqueue_script'], $slug);
                 }
 
                 // Set up block data for registration
@@ -201,7 +202,7 @@ function sage_blocks_callback($block, $content = '', $is_preview = false, $post_
                 echo \Roots\view($view, ['block' => $block]);
             }
         } else {
-            echo \App\template(locate_template("$directory/$slug"), ['block' => $block]);
+            echo \App\template(locate_template("${directory}/${slug}"), ['block' => $block]);
         }
     }
 }
@@ -226,13 +227,41 @@ function removeBladeExtension($filename)
  * Checks asset path for specified asset.
  *
  * @param string &$path
+ * @param string $block
  *
  * @return void
  */
-function checkAssetPath(&$path)
+function checkAssetPath(&$path, $block)
 {
+    if (isSage10() && function_exists('\Roots\bundle')) { // Bud
+        try {
+            $bundle = \Roots\bundle($path);
+
+            add_action('wp_enqueue_scripts', function () use ($block, $bundle) {
+                if (has_block("acf/$block")) {
+                    $bundle->enqueue();
+                }
+            }, 50);
+
+            add_action('enqueue_block_editor_assets', function () use ($block, $bundle) {
+                if (has_block("acf/$block")) {
+                    $bundle->enqueue();
+                }
+            }, 50);
+
+            $path = ''; // Reset path
+            return;
+        } catch (\Exception $e) {
+            //
+        }
+    }
+
     if (preg_match("/^(styles|scripts)/", $path)) {
-        $path = isSage10() ? \Roots\asset($path)->uri() : \App\asset_path($path);
+        if (isSage10()) {
+            $path = \Roots\asset($path)->uri(); // Laravel Mix (Pre-Bud Sage)
+        } else {
+            $path = \App\asset_path($path);
+        }
     }
 }
 
